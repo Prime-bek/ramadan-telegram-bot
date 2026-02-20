@@ -295,6 +295,7 @@ def main_keyboard():
     keyboard = [
         [InlineKeyboardButton("📅 Сегодня", callback_data="today")],
         [InlineKeyboardButton("📆 Завтра", callback_data="tomorrow")],
+        [InlineKeyboardButton("🕰 Проверить время", callback_data="check_time")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -320,7 +321,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     today = datetime.now(UZ_TZ)
+    
+    if query.data == "check_time":
+        now = datetime.now(UZ_TZ)
 
+        await query.edit_message_text(
+            f"""🕰 Текущее серверное время:
+
+Дата: {now.strftime('%Y-%m-%d')}
+Время: {now.strftime('%H:%M:%S')}
+Timezone: Asia/Tashkent""",
+            reply_markup=main_keyboard()
+        )
+        return
     if query.data == "today":
         date_obj = today
     elif query.data == "tomorrow":
