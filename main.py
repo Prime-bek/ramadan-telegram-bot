@@ -467,6 +467,7 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("checktime", check_time))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     # Каждый день в 00:05 создаём задачи
@@ -484,6 +485,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Серверное время: {now}\n"
         f"Дата: {now.strftime('%Y-%m-%d')}\n"
         f"Время: {now.strftime('%H:%M:%S')}"
+    )
+    async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+     now = datetime.now(UZ_TZ)
+
+    await update.message.reply_text(
+        f"""🕰 Текущее серверное время
+
+Дата: {now.strftime('%Y-%m-%d')}
+Время: {now.strftime('%H:%M:%S')}
+Часовой пояс: Asia/Tashkent"""
     )
     
 
