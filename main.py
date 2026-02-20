@@ -464,14 +464,15 @@ def main():
 
     print("Бот запущен 🚀")
     app.run_polling()
-    async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-     now = datetime.now(UZ_TZ)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now(UZ_TZ)
 
-     await update.message.reply_text(
+    await update.message.reply_text(
         f"Серверное время: {now}\n"
         f"Дата: {now.strftime('%Y-%m-%d')}\n"
         f"Время: {now.strftime('%H:%M:%S')}"
     )
+    
 
 
 if __name__ == "__main__":
