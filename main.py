@@ -2,6 +2,9 @@
 import logging
 import json
 from datetime import datetime, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+UZ_TZ = ZoneInfo("Asia/Tashkent")
 
 from telegram import (
     Update,
@@ -83,7 +86,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    today = datetime.now()
+    today = datetime.now(UZ_TZ)
 
     if query.data == "today":
         date_obj = today
@@ -116,7 +119,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- ЕЖЕДНЕВНОЕ ПЛАНИРОВАНИЕ ----------
 async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
 
     if today not in TIMES:
         return
@@ -156,7 +159,7 @@ async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- СООБЩЕНИЯ ----------
 async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     suhoor = TIMES[today]["suhoor"]
 
     await context.bot.send_message(
@@ -185,7 +188,7 @@ async def suhoor_exact(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     iftar = TIMES[today]["iftar"]
 
     await context.bot.send_message(
@@ -200,7 +203,7 @@ async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def iftar_exact(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     iftar = TIMES[today]["iftar"]
 
     await context.bot.send_message(
@@ -316,7 +319,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    today = datetime.now()
+    today = datetime.now(UZ_TZ)
 
     if query.data == "today":
         date_obj = today
@@ -389,7 +392,7 @@ async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
 
 # ---------- СООБЩЕНИЯ ----------
 async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     suhoor = TIMES[today]["suhoor"]
 
     await context.bot.send_message(
@@ -404,7 +407,7 @@ async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def suhoor_exact(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     suhoor = TIMES[today]["suhoor"]
 
     await context.bot.send_message(
@@ -418,7 +421,7 @@ async def suhoor_exact(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(UZ_TZ).strftime("%Y-%m-%d")
     iftar = TIMES[today]["iftar"]
 
     await context.bot.send_message(
