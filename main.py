@@ -46,15 +46,29 @@ users = load_users()
 
 # ---------------- DUA ----------------
 
-DUA_SUHOOR = """🌅 Дуа сухура:
+DUA_SUHOOR = """Navaytu an asuma sovma shahri ramazona minal fajri ilal mag'ribi xolisan lillahi ta'ala. Allohu akbak"""
 
-Navaytu an asuma sovma shahri ramazona minal fajri ilal mag'ribi xolisan lillahi ta'ala. Allohu akbak
-"""
+DUA_IFTAR = """Allohumma laka sumtu va bika amantu va a'layka tavakkaltu va a'la rizqika aftortu, fag'firliy ya G'offaru ma qoddamtu va ma axxortu,"""
 
-DUA_IFTAR = """🌙 Дуа ифтара:
 
-Allohumma laka sumtu va bika amantu va a'layka tavakkaltu va a'la rizqika aftortu, fag'firliy ya G'offaru ma qoddamtu va ma axxortu,
-"""
+# ---------------- FORMAT DATE ----------------
+
+def format_date_ru(date_obj):
+    months = {
+        1: "января", 2: "февраля", 3: "марта",
+        4: "апреля", 5: "мая", 6: "июня",
+        7: "июля", 8: "августа", 9: "сентября",
+        10: "октября", 11: "ноября", 12: "декабря"
+    }
+
+    weekdays = {
+        0: "Понедельник", 1: "Вторник", 2: "Среда",
+        3: "Четверг", 4: "Пятница", 5: "Суббота",
+        6: "Воскресенье"
+    }
+
+    return f"{date_obj.day} {months[date_obj.month]} {date_obj.year} ({weekdays[date_obj.weekday()]})"
+
 
 # ---------------- KEYBOARD ----------------
 
@@ -66,6 +80,7 @@ def main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 # ---------------- COMMANDS ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -75,7 +90,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "Ассаляму алейкум 🌙\n\n"
-        "Вы подключены к напоминаниям.\n\n"
+        "Вы подключены к автоматическим напоминаниям.\n\n"
         "Выберите дату:",
         reply_markup=main_keyboard()
     )
@@ -87,10 +102,11 @@ async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"""🕰 Текущее серверное время
 
-Дата: {now.strftime('%Y-%m-%d')}
-Время: {now.strftime('%H:%M:%S')}
-Часовой пояс: Asia/Tashkent"""
+📅 {format_date_ru(now)}
+⏰ {now.strftime('%H:%M:%S')}
+🌍 Asia/Tashkent"""
     )
+
 
 # ---------------- BUTTON HANDLER ----------------
 
@@ -105,9 +121,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"""🕰 Текущее серверное время
 
-Дата: {now.strftime('%Y-%m-%d')}
-Время: {now.strftime('%H:%M:%S')}
-Timezone: Asia/Tashkent""",
+📅 {format_date_ru(now)}
+⏰ {now.strftime('%H:%M:%S')}
+🌍 Asia/Tashkent""",
             reply_markup=main_keyboard()
         )
         return
@@ -120,15 +136,13 @@ Timezone: Asia/Tashkent""",
         return
 
     date_str = date_obj.strftime("%Y-%m-%d")
-    weekday = date_obj.strftime("%A")
 
     if date_str in TIMES:
         suhoor = TIMES[date_str]["suhoor"]
         iftar = TIMES[date_str]["iftar"]
 
         await query.edit_message_text(
-            f"""📅 Дата: {date_str}
-📆 День: {weekday}
+            f"""📅 {format_date_ru(date_obj)}
 
 🌅 Сухур до: {suhoor}
 🌙 Ифтар в: {iftar}""",
@@ -140,6 +154,65 @@ Timezone: Asia/Tashkent""",
             reply_markup=main_keyboard()
         )
 
+
+# ---------------- DAILY REMINDERS ----------------
+
+async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
+    today_obj = datetime.now(UZ_TZ)
+    today = today_obj.strftime("%Y-%m-%d")
+
+    if today not in TIMES:
+        return
+
+    suhoor_time = datetime.strptime(
+        today + " " + TIMES[today]["suhoor"],
+        "%Y-%m-%d %H:%M"
+    ).replace(tzinfo=UZ_TZ)
+
+    iftar_time = datetime.strptime(
+        today + " " + TIMES[today]["iftar"],
+        "%Y-%m-%d %H:%M"
+    ).replace(tzinfo=UZ_TZ)
+
+    for user in users:
+        context.job_queue.run_once(reminder_suhoor_10, suhoor_time - timedelta(minutes=10), chat_id=user)
+        context.job_queue.run_once(reminder_iftar_10, iftar_time - timedelta(minutes=10), chat_id=user)
+
+
+async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now(UZ_TZ)
+    today = now.strftime("%Y-%m-%d")
+    suhoor = TIMES[today]["suhoor"]
+
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=f"""📅 {format_date_ru(now)}
+
+⏳ До окончания сухура осталось 10 минут!
+🕰 Время закрытия: {suhoor}
+
+📿 Дуа сухура:
+{DUA_SUHOOR}"""
+    )
+
+
+async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
+    now = datetime.now(UZ_TZ)
+    today = now.strftime("%Y-%m-%d")
+    iftar = TIMES[today]["iftar"]
+
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=f"""📅 {format_date_ru(now)}
+
+⏳ До ифтара осталось 10 минут!
+🕰 Время открытия: {iftar}
+
+📿 Дуа ифтара:
+{DUA_IFTAR}"""
+    )
+
+
 # ---------------- MAIN ----------------
 
 def main():
@@ -148,6 +221,14 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("checktime", check_time))
     app.add_handler(CallbackQueryHandler(button_handler))
+
+    app.job_queue.run_daily(
+        daily_scheduler,
+        time=datetime.strptime("00:05", "%H:%M").time(),
+        timezone=UZ_TZ,
+    )
+
+    app.job_queue.run_once(daily_scheduler, 5)
 
     print("Бот запущен 🚀")
     app.run_polling()
