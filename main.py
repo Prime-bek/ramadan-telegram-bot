@@ -225,7 +225,6 @@ def main():
     app.job_queue.run_daily(
         daily_scheduler,
         time=datetime.strptime("00:05", "%H:%M").time(),
-        timezone=UZ_TZ,
     )
 
     app.job_queue.run_once(daily_scheduler, 5)
