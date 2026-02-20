@@ -230,7 +230,8 @@ def main():
     app.run_polling()
 
 
-if __name__ == "__main__":чё
+if __name__ == "__main__":
+    main()
 import logging
 import json
 from datetime import datetime, timedelta
