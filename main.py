@@ -76,7 +76,7 @@ def main_keyboard():
     keyboard = [
         [InlineKeyboardButton("📅 Сегодня", callback_data="today")],
         [InlineKeyboardButton("📆 Завтра", callback_data="tomorrow")],
-        [InlineKeyboardButton("🕰 Проверить время", callback_data="check_time")],
+        [InlineKeyboardButton("⏳ До ифтара", callback_data="countdown")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -114,24 +114,58 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    today = datetime.now(UZ_TZ)
+    now = datetime.now(UZ_TZ)
 
+    # ---------- CHECK TIME ----------
     if query.data == "check_time":
-        now = datetime.now(UZ_TZ)
         await query.edit_message_text(
-            f"""🕰 Текущее серверное время
-
-📅 {format_date_ru(now)}
-⏰ {now.strftime('%H:%M:%S')}
-🌍 Asia/Tashkent""",
+            f"🕰 {format_date_ru(now)}\n⏰ {now.strftime('%H:%M:%S')}",
             reply_markup=main_keyboard()
         )
         return
 
+    # ---------- COUNTDOWN ----------
+    if query.data == "countdown":
+        today = now.strftime("%Y-%m-%d")
+
+        if today not in TIMES:
+            await query.edit_message_text("Нет данных на сегодня.")
+            return
+
+        iftar_str = TIMES[today]["iftar"]
+
+        iftar_time = datetime.strptime(
+            today + " " + iftar_str,
+            "%Y-%m-%d %H:%M"
+        ).replace(tzinfo=UZ_TZ)
+
+        diff = iftar_time - now
+
+        if diff.total_seconds() <= 0:
+            text = "🌙 Ифтар уже наступил!"
+        else:
+            hours = diff.seconds // 3600
+            minutes = (diff.seconds % 3600) // 60
+
+            text = f"""🌙 До ифтара осталось:
+
+⏳ {hours} ч {minutes} мин
+🕰 Ифтар в: {iftar_str}
+📅 {format_date_ru(now)}"""
+
+        await query.edit_message_text(
+            text,
+            reply_markup=main_keyboard()
+        )
+        return
+
+    # ---------- TODAY ----------
     if query.data == "today":
-        date_obj = today
+        date_obj = now
+
     elif query.data == "tomorrow":
-        date_obj = today + timedelta(days=1)
+        date_obj = now + timedelta(days=1)
+
     else:
         return
 
@@ -146,11 +180,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🌅 Сухур до: {suhoor}
 🌙 Ифтар в: {iftar}""",
-            reply_markup=main_keyboard()
-        )
-    else:
-        await query.edit_message_text(
-            "Нет данных на эту дату.",
             reply_markup=main_keyboard()
         )
 
