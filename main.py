@@ -50,6 +50,16 @@ DUA_SUHOOR = """Navaytu an asuma sovma shahri ramazona minal fajri ilal mag'ribi
 
 DUA_IFTAR = """Allohumma laka sumtu va bika amantu va a'layka tavakkaltu va a'la rizqika aftortu, fag'firliy ya G'offaru ma qoddamtu va ma axxortu,"""
 
+IFTAR_REWARD = """✨ Пусть Аллах примет ваш пост 🤲
+
+Посланник Аллаха ﷺ сказал:
+
+"У постящегося две радости:
+радость при разговении
+и радость при встрече со своим Господом."
+
+📚 Бухари, Муслим"""
+
 
 # ---------------- FORMAT DATE ----------------
 
@@ -206,6 +216,7 @@ async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
     for user in users:
         context.job_queue.run_once(reminder_suhoor_10, suhoor_time - timedelta(minutes=10), chat_id=user)
         context.job_queue.run_once(reminder_iftar_10, iftar_time - timedelta(minutes=10), chat_id=user)
+        context.job_queue.run_once(iftar_reward, iftar_time + timedelta(minutes=1), chat_id=user,)
 
 
 async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
@@ -240,6 +251,12 @@ async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
 📿 Дуа ифтара:
 {DUA_IFTAR}"""
     )
+async def iftar_reward(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=IFTAR_REWARD
+    )
+    
 
 
 # ---------------- MAIN ----------------
