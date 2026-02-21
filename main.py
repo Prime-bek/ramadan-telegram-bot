@@ -260,13 +260,22 @@ async def iftar_reward(context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------- MAIN ----------------
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    total_users = len(users)
 
+    await update.message.reply_text(
+        f"""📊 Статистика бота
+
+👥 Пользователей: {total_users}
+🌙 Ramadan Reminder Bot"""
+    )
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("checktime", check_time))
     app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("stats", stats))
 
     app.job_queue.run_daily(
         daily_scheduler,
