@@ -3,6 +3,7 @@ import json
 import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from translations import TEXTS
 
 from telegram import (
     Update,
@@ -80,11 +81,12 @@ def format_date_ru(date_obj):
 
 # ---------------- KEYBOARD ----------------
 
-def main_keyboard():
+def main_keyboard(chat_id):
     keyboard = [
-        [InlineKeyboardButton("📅 Сегодня", callback_data="today")],
-        [InlineKeyboardButton("📆 Завтра", callback_data="tomorrow")],
-        [InlineKeyboardButton("⏳ До ифтара", callback_data="countdown")],
+        [InlineKeyboardButton(t(chat_id,"today"), callback_data="today")],
+        [InlineKeyboardButton(t(chat_id,"tomorrow"), callback_data="tomorrow")],
+        [InlineKeyboardButton(t(chat_id,"countdown"), callback_data="countdown")],
+        [InlineKeyboardButton(t(chat_id,"check_time"), callback_data="check_time")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -93,6 +95,11 @@ def language_keyboard():
         [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
         [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")]
     ])
+
+def t(chat_id, key):
+    chat_id = str(chat_id)
+    lang = users.get(chat_id, {}).get("lang", "ru")
+    return TEXTS[lang][key]
 
 
 # ---------------- COMMANDS ----------------
@@ -143,15 +150,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_users()
 
         await query.edit_message_text(
-            "✅ Til o'zgartirildi / Язык изменён"
-        )
+    t(chat_id, "lang_changed"),
+    reply_markup=main_keyboard(chat_id)
+)
         return    
 
     # ---------- CHECK TIME ----------
     if query.data == "check_time":
         await query.edit_message_text(
             f"🕰 {format_date_ru(now)}\n⏰ {now.strftime('%H:%M:%S')}",
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(chat_id)
         )
         return
 
@@ -186,7 +194,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             text,
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(chat_id)
         )
         return
 
@@ -211,7 +219,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 🌅 Сухур до: {suhoor}
 🌙 Ифтар в: {iftar}""",
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(chat_id)
         )
 
 
