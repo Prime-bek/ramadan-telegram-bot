@@ -31,16 +31,14 @@ with open("times.json", "r", encoding="utf-8") as f:
 
 def load_users():
     try:
-        with open("users.json", "r") as f:
-            return set(json.load(f))
+        with open("users.json", "r", encoding="utf-8") as f:
+            return json.load(f)
     except:
-        return set()
+        return {}
 
-
-def save_users(users):
-    with open("users.json", "w") as f:
-        json.dump(list(users), f)
-
+def save_users():
+    with open("users.json", "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
 
 users = load_users()
 
@@ -90,20 +88,30 @@ def main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def language_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
+        [InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")]
+    ])
+
 
 # ---------------- COMMANDS ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    users.add(chat_id)
-    save_users(users)
+    chat_id = str(update.effective_chat.id)
+
+    if chat_id not in users:
+        users[chat_id] = {
+            "lang": "ru",
+            "country": "uz"
+        }
+        save_users()
 
     await update.message.reply_text(
-        "Ассаляму алейкум 🌙\n\n"
-        "Вы подключены к автоматическим напоминаниям.\n\n"
-        "Выберите дату:",
-        reply_markup=main_keyboard()
+        "🌍 Выберите язык / Tilni tanlang:",
+        reply_markup=language_keyboard()
     )
+    
 
 
 async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,6 +133,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     now = datetime.now(UZ_TZ)
+
+    # ---------- LANGUAGE SWITCH ----------
+    if query.data.startswith("lang_"):
+        lang = query.data.split("_")[1]
+
+        chat_id = str(query.message.chat.id)
+        users[chat_id]["lang"] = lang
+        save_users()
+
+        await query.edit_message_text(
+            "✅ Til o'zgartirildi / Язык изменён"
+        )
+        return    
 
     # ---------- CHECK TIME ----------
     if query.data == "check_time":
