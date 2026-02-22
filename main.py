@@ -326,11 +326,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if update.effective_user.id != ADMIN_ID:
          return
 
-    context.user_data["broadcast_mode"] = True
+        context.user_data["broadcast_mode"] = True
 
-    await q.edit_message_text(
-        "📢 Отправь сообщение, и оно будет разослано ВСЕМ пользователям.\n\n"
-        "❗ Просто отправь текст следующим сообщением."
+        await q.edit_message_text(
+            "📢 Отправь сообщение, и оно будет разослано ВСЕМ пользователям.\n\n"
+            "❗ Просто отправь текст следующим сообщением."
     )
         
 # ---------------- SCHEDULER ----------------
