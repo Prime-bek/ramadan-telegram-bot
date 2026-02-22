@@ -19,7 +19,7 @@ ADMIN_ID = 1265652628
 
 logging.basicConfig(level=logging.INFO)
 
-# ---------------- USERS ----------------
+# ---------------- DATA MANAGEMENT ----------------
 def load_users():
     if os.path.exists("users.json"):
         with open("users.json", "r", encoding="utf-8") as f:
@@ -31,6 +31,29 @@ def save_users():
         json.dump(users, f, ensure_ascii=False, indent=2)
 
 users = load_users()
+
+def save_user_data(user_obj, uid):
+    """Сбор всех доступных данных пользователя"""
+    if uid not in users:
+        users[uid] = {
+            "lang": "ru",
+            "city": "tashkent",
+            "remind_min": 10,
+            "first_name": user_obj.first_name,
+            "last_name": user_obj.last_name,
+            "username": user_obj.username,
+            "language_code": user_obj.language_code, # Язык самого приложения TG
+            "is_premium": user_obj.is_premium,
+            "joined": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+    else:
+        # Обновляем данные, если они изменились
+        users[uid]["first_name"] = user_obj.first_name
+        users[uid]["last_name"] = user_obj.last_name
+        users[uid]["username"] = user_obj.username
+    
+    users[uid]["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    save_users()
 
 # ---------------- HELPERS ----------------
 def t(uid, key):
@@ -54,34 +77,27 @@ def main_keyboard(uid):
         [InlineKeyboardButton(t(uid, "today"), callback_data="day_today"),
          InlineKeyboardButton(t(uid, "tomorrow"), callback_data="day_tomorrow")],
         [InlineKeyboardButton(t(uid, "countdown"), callback_data="run_countdown")],
-        [InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings")]
+        [InlineKeyboardButton(t(uid, "settings"), callback_data="menu_settings")]
     ])
 
 def settings_keyboard(uid):
+    # Кнопки в настройках также зависят от выбранного языка
+    txt_lang = "🌐 Til / Язык"
+    txt_city = "🌍 Shahar / Город"
+    txt_rem = "🔔 Eslatma / Уведомление"
+    txt_back = "⬅️ Orqaga / Назад"
+    
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🌐 Язык", callback_data="set_lang"),
-         InlineKeyboardButton("🌍 Город", callback_data="set_city")],
-        [InlineKeyboardButton("🔔 Время уведомления", callback_data="set_remind")],
-        [InlineKeyboardButton("⬅️ Назад", callback_data="back_main")]
+        [InlineKeyboardButton(txt_lang, callback_data="set_lang"),
+         InlineKeyboardButton(txt_city, callback_data="set_city")],
+        [InlineKeyboardButton(txt_rem, callback_data="set_remind")],
+        [InlineKeyboardButton(txt_back, callback_data="back_main")]
     ])
 
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
     uid = str(update.effective_chat.id)
-
-    if uid not in users:
-        users[uid] = {
-            "lang": "ru",
-            "city": "tashkent",
-            "remind_min": 10,
-            "username": user.username,
-            "name": user.first_name,
-            "joined": datetime.utcnow().isoformat()
-        }
-
-    users[uid]["last_seen"] = datetime.utcnow().isoformat()
-    save_users()
+    save_user_data(update.effective_user, uid)
 
     await update.message.reply_text(
         t(uid, "start"),
@@ -93,11 +109,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     total = len(users)
-    text = f"📊 *BOT STATS*\n\n👥 Всего пользователей: {total}\n\n"
+    text = f"📊 *ПОЛНАЯ СТАТИСТИКА*\n\n👥 Всего: {total}\n\n"
     
-    # Список последних 15 пользователей для компактности
-    for uid, data in list(users.items())[-15:]:
-        text += f"👤 {data.get('name')} (@{data.get('username')}) | {data.get('city')} | {data.get('lang')}\n"
+    for uid, d in list(users.items())[-10:]: # Последние 10
+        text += (f"👤 {d.get('first_name')} (@{d.get('username')})\n"
+                 f"└ ID: `{uid}` | {d.get('city')} | {d.get('lang')}\n"
+                 f"└ Premium: {d.get('is_premium')} | Активен: {d.get('last_active')}\n\n")
 
     await update.message.reply_text(text[:4000], parse_mode="Markdown")
 
@@ -105,92 +122,85 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
-
     uid = str(q.message.chat.id)
+    save_user_data(update.effective_user, uid)
+
     tz = get_tz(uid)
     now = datetime.now(tz)
-
-    users[uid]["last_seen"] = datetime.utcnow().isoformat()
-    save_users()
-
     city = users[uid]["city"]
     times = get_city_times(city)
 
-    # 1. ОБРАТНЫЙ ОТСЧЕТ
+    # Логика кнопок
     if q.data == "run_countdown":
         today = now.strftime("%Y-%m-%d")
         if today not in times:
-            await q.edit_message_text("❌ Нет данных", reply_markup=main_keyboard(uid))
+            await q.edit_message_text("❌ No data", reply_markup=main_keyboard(uid))
             return
-
         iftar_str = times[today]["iftar"]
         iftar_dt = datetime.strptime(f"{today} {iftar_str}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
         diff = iftar_dt - now
-
         if diff.total_seconds() <= 0:
-            text = "🌙 Ифтар уже наступил!"
+            text = "🌙 Ифтар / Iftorlik vaqti bo'ldi!"
         else:
             h, m = diff.seconds // 3600, (diff.seconds % 3600) // 60
             text = f"{t(uid,'iftar_left')}\n\n⏳ {h} {t(uid,'hour')} {m} {t(uid,'minute')}\n🕰 {iftar_str}"
         await q.edit_message_text(text, reply_markup=main_keyboard(uid))
 
-    # 2. СЕГОДНЯ / ЗАВТРА
     elif q.data.startswith("day_"):
-        target_date = now if q.data == "day_today" else now + timedelta(days=1)
-        ds = target_date.strftime("%Y-%m-%d")
+        target = now if q.data == "day_today" else now + timedelta(days=1)
+        ds = target.strftime("%Y-%m-%d")
         if ds in times:
             res = times[ds]
             text = f"📅 {ds}\n\n{t(uid,'suhoor_until')} {res['suhoor']}\n{t(uid,'iftar_time')} {res['iftar']}"
-        else:
-            text = "❌ Нет данных"
+        else: text = "❌ No data"
         await q.edit_message_text(text, reply_markup=main_keyboard(uid))
 
-    # 3. МЕНЮ НАСТРОЕК
     elif q.data == "menu_settings":
-        await q.edit_message_text("⚙️ Настройки:", reply_markup=settings_keyboard(uid))
+        await q.edit_message_text("⚙️ Sozlamalar / Настройки:", reply_markup=settings_keyboard(uid))
 
     elif q.data == "back_main":
         await q.edit_message_text(t(uid, "start"), reply_markup=main_keyboard(uid))
 
-    # 4. ВЫБОР ЯЗЫКА
+    # Настройки Языка
     elif q.data == "set_lang":
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🇷🇺 RU", callback_data="lang_ru"),
-                                    InlineKeyboardButton("🇺🇿 UZ", callback_data="lang_uz")]])
-        await q.edit_message_text("Выберите язык:", reply_markup=kb)
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru"),
+                                    InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data="lang_uz")]])
+        await q.edit_message_text("Tilni tanlang / Выберите язык:", reply_markup=kb)
     elif q.data.startswith("lang_"):
         users[uid]["lang"] = q.data.split("_")[1]
         save_users()
-        await q.edit_message_text("✅ Город сохранен", reply_markup=main_keyboard(uid))
+        await q.edit_message_text(t(uid, "lang_changed"), reply_markup=main_keyboard(uid))
 
-    # 5. ВЫБОР ГОРОДА
+    # Настройки Города
     elif q.data == "set_city":
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("Tashkent", callback_data="city_tashkent")],
                                     [InlineKeyboardButton("Bremen", callback_data="city_bremen")]])
-        await q.edit_message_text("Выберите город:", reply_markup=kb)
+        await q.edit_message_text("Shaharni tanlang / Выберите город:", reply_markup=kb)
     elif q.data.startswith("city_"):
         users[uid]["city"] = q.data.split("_")[1]
         save_users()
-        await q.edit_message_text("✅ Город сохранен", reply_markup=main_keyboard(uid))
+        await q.edit_message_text(t(uid, "city_changed"), reply_markup=main_keyboard(uid))
 
-    # 6. ВЫБОР ВРЕМЕНИ НАПОМИНАНИЯ
+    # Настройки напоминаний
     elif q.data == "set_remind":
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("5 мин", callback_data="rem_5"),
-                                    InlineKeyboardButton("10 мин", callback_data="rem_10"),
-                                    InlineKeyboardButton("15 мин", callback_data="rem_15")]])
-        await q.edit_message_text("За сколько минут напоминать?", reply_markup=kb)
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("5 min", callback_data="rem_5"),
+                                    InlineKeyboardButton("10 min", callback_data="rem_10"),
+                                    InlineKeyboardButton("15 min", callback_data="rem_15")]])
+        await q.edit_message_text("Eslatma vaqti / Время напоминания:", reply_markup=kb)
     elif q.data.startswith("rem_"):
         users[uid]["remind_min"] = int(q.data.split("_")[1])
         save_users()
-        await q.edit_message_text(f"✅ Установлено: {users[uid]['remind_min']} мин", reply_markup=main_keyboard(uid))
+        await q.edit_message_text(t(uid, "remind_changed"), reply_markup=main_keyboard(uid))
 
-# ---------------- REMINDERS ----------------
+# ---------------- SCHEDULER ----------------
 async def send_msg(context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=context.job.chat_id, text=context.job.data)
+    try:
+        await context.bot.send_message(chat_id=context.job.chat_id, text=context.job.data)
+    except: pass
 
 async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
     for job in list(context.job_queue.jobs()):
-        if job.name == "reminder":
-            job.schedule_removal()
+        if job.name == "reminder": job.schedule_removal()
 
     for uid, prefs in users.items():
         tz = get_tz(uid)
@@ -201,26 +211,22 @@ async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
 
         rm = prefs.get("remind_min", 10)
         for event in ["suhoor", "iftar"]:
-            event_time = times[today][event]
-            event_dt = datetime.strptime(f"{today} {event_time}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-            remind_dt = event_dt - timedelta(minutes=rm)
+            ev_time = times[today][event]
+            ev_dt = datetime.strptime(f"{today} {ev_time}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+            rem_dt = ev_dt - timedelta(minutes=rm)
 
-            if remind_dt > now:
-                msg = f"🔔 {t(uid, event + '_rem_text')}\n🕰 {event_time}"
-                context.job_queue.run_once(send_msg, remind_dt, chat_id=int(uid), data=msg, name="reminder")
+            if rem_dt > now:
+                msg = f"🔔 {t(uid, event + '_rem_text')} {rm} {t(uid, 'minute')}\n🕰 {ev_time}"
+                context.job_queue.run_once(send_msg, rem_dt, chat_id=int(uid), data=msg, name="reminder")
 
 # ---------------- MAIN ----------------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CallbackQueryHandler(button_handler))
-
     app.job_queue.run_daily(daily_scheduler, time=time(0, 5))
-    app.job_queue.run_once(daily_scheduler, 3)
-
-    print("Bot started")
+    app.job_queue.run_once(daily_scheduler, 5)
     app.run_polling()
 
 if __name__ == "__main__":
