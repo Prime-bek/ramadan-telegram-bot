@@ -105,8 +105,10 @@ def t(chat_id, key):
 # ---------------- COMMANDS ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     chat_id = str(update.effective_chat.id)
 
+    # если пользователь новый
     if chat_id not in users:
         users[chat_id] = {
             "lang": "ru",
@@ -115,10 +117,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_users()
 
     await update.message.reply_text(
-        "🌍 Выберите язык / Tilni tanlang:",
-        reply_markup=language_keyboard()
-    )
-    
+        t(chat_id, "start"),
+        reply_markup=main_keyboard(chat_id)
+    )    
 
 
 async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,11 +136,19 @@ async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- BUTTON HANDLER ----------------
 
+
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    chat_id = str(query.message.chat.id)
     await query.answer()
 
     now = datetime.now(UZ_TZ)
+
+    await query.edit_message_text(
+    text,
+    reply_markup=main_keyboard(chat_id)
+)
 
     # ---------- LANGUAGE SWITCH ----------
     if query.data.startswith("lang_"):
