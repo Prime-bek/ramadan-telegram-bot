@@ -5,6 +5,7 @@ import asyncio  # Добавлено для задержки
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
 from threading import Lock  # Добавлено для защиты файла
+from telegram.ext import MessageHandler, filters
 
 from translations import TEXTS
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -101,7 +102,8 @@ def settings_kb(uid):
 def admin_kb():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")]
+        [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")]
     ])
 
 # ---------------- COMMANDS ----------------
@@ -109,11 +111,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_chat.id)
     save_user_data(update.effective_user, uid)
     await update.message.reply_text(t(uid, "start"), reply_markup=main_kb(uid))
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID: return
-    text = f"📊 СТАТИСТИКА\n👥 Всего: {len(users)}"
-    await update.message.reply_text(text)
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID: return
@@ -132,6 +129,34 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🛠 Админ панель",
         reply_markup=admin_kb()
+    )
+async def admin_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    if not context.user_data.get("broadcast_mode"):
+        return
+
+    context.user_data["broadcast_mode"] = False
+
+    msg = update.message.text
+
+    sent = 0
+
+    for uid in users.keys():
+        try:
+            await context.bot.send_message(
+                chat_id=int(uid),
+                text=f"📢 {msg}"
+            )
+            sent += 1
+            await asyncio.sleep(0.05)
+        except:
+            continue
+
+    await update.message.reply_text(
+        f"✅ Рассылка завершена\nОтправлено: {sent}"
     )        
 
 # ---------------- HANDLERS ----------------
@@ -210,11 +235,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users[uid]["remind_min"] = int(q.data.split("_")[1])
         save_users()
         await q.edit_message_text(t(uid, "remind_changed"), reply_markup=main_kb(uid))
+
             # ---------------- ADMIN PANEL ----------------
 
     elif q.data == "admin_users":
         if update.effective_user.id != ADMIN_ID:
             return
+        
+    
 
         buttons = []
         for uid, data in list(users.items())[:20]:  # первые 20 пользователей
@@ -230,6 +258,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👥 Пользователи:",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
+    
 
     elif q.data.startswith("admin_user_"):
         if update.effective_user.id != ADMIN_ID:
@@ -256,6 +285,54 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await q.edit_message_text(info)
 
+    elif q.data == "admin_stats":
+        if update.effective_user.id != ADMIN_ID:
+            return
+
+        total_users = len(users)
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        active_today = 0
+        lang_stats = {}
+        city_stats = {}
+
+        for uid2, data in users.items():
+
+            last_active = data.get("last_active", "")
+            if last_active.startswith(today):
+                active_today += 1
+
+            lang = data.get("lang", "unknown")
+            lang_stats[lang] = lang_stats.get(lang, 0) + 1
+
+            city = data.get("city", "unknown")
+            city_stats[city] = city_stats.get(city, 0) + 1
+
+        text = "📊 СТАТИСТИКА БОТА\n\n"
+        text += f"👥 Всего пользователей: {total_users}\n"
+        text += f"🔥 Активны сегодня: {active_today}\n\n"
+
+        text += "🌐 Языки:\n"
+        for lang, count in lang_stats.items():
+            text += f"• {lang}: {count}\n"
+
+        text += "\n🌍 Города:\n"
+        for city, count in city_stats.items():
+            text += f"• {city}: {count}\n"
+
+        await q.edit_message_text(text, reply_markup=admin_kb())
+
+    elif q.data == "admin_broadcast":
+        if update.effective_user.id != ADMIN_ID:
+            return
+
+    context.user_data["broadcast_mode"] = True
+
+    await q.edit_message_text(
+        "📢 Отправь сообщение, и оно будет разослано ВСЕМ пользователям.\n\n"
+        "❗ Просто отправь текст следующим сообщением."
+    )
+        
 # ---------------- SCHEDULER ----------------
 async def send_notification(context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -307,10 +384,10 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CommandHandler("admin", admin_panel))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_message_handler))
 
     app.job_queue.run_daily(run_scheduler, time=time(0, 5))
     app.job_queue.run_once(run_scheduler, 5)
