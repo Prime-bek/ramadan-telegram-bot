@@ -140,29 +140,23 @@ async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    chat_id = str(query.message.chat.id)
     await query.answer()
 
+    chat_id = str(query.message.chat.id)
     now = datetime.now(UZ_TZ)
-
-    await query.edit_message_text(
-    text,
-    reply_markup=main_keyboard(chat_id)
-)
 
     # ---------- LANGUAGE SWITCH ----------
     if query.data.startswith("lang_"):
         lang = query.data.split("_")[1]
 
-        chat_id = str(query.message.chat.id)
         users[chat_id]["lang"] = lang
         save_users()
 
         await query.edit_message_text(
-    t(chat_id, "lang_changed"),
-    reply_markup=main_keyboard(chat_id)
-)
-        return    
+            t(chat_id, "lang_changed"),
+            reply_markup=main_keyboard(chat_id)
+        )
+        return
 
     # ---------- CHECK TIME ----------
     if query.data == "check_time":
@@ -207,7 +201,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ---------- TODAY ----------
+    # ---------- TODAY / TOMORROW ----------
     if query.data == "today":
         date_obj = now
 
@@ -230,7 +224,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🌙 Ифтар в: {iftar}""",
             reply_markup=main_keyboard(chat_id)
         )
-
 
 # ---------------- DAILY REMINDERS ----------------
 
