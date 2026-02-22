@@ -62,22 +62,36 @@ IFTAR_REWARD = """✨ Пусть Аллах примет ваш пост 🤲
 
 # ---------------- FORMAT DATE ----------------
 
-def format_date_ru(date_obj):
+def format_date(date_obj, chat_id):
+
+    lang = users.get(str(chat_id), {}).get("lang", "ru")
+
     months = {
-        1: "января", 2: "февраля", 3: "марта",
-        4: "апреля", 5: "мая", 6: "июня",
-        7: "июля", 8: "августа", 9: "сентября",
-        10: "октября", 11: "ноября", 12: "декабря"
+        "ru": [
+            "января","февраля","марта","апреля","мая","июня",
+            "июля","августа","сентября","октября","ноября","декабря"
+        ],
+        "uz": [
+            "yanvar","fevral","mart","aprel","may","iyun",
+            "iyul","avgust","sentyabr","oktyabr","noyabr","dekabr"
+        ]
     }
 
     weekdays = {
-        0: "Понедельник", 1: "Вторник", 2: "Среда",
-        3: "Четверг", 4: "Пятница", 5: "Суббота",
-        6: "Воскресенье"
+        "ru": [
+            "Понедельник","Вторник","Среда",
+            "Четверг","Пятница","Суббота","Воскресенье"
+        ],
+        "uz": [
+            "Dushanba","Seshanba","Chorshanba",
+            "Payshanba","Juma","Shanba","Yakshanba"
+        ]
     }
 
-    return f"{date_obj.day} {months[date_obj.month]} {date_obj.year} ({weekdays[date_obj.weekday()]})"
+    month = months[lang][date_obj.month - 1]
+    weekday = weekdays[lang][date_obj.weekday()]
 
+    return f"{date_obj.day} {month} {date_obj.year} ({weekday})"
 
 # ---------------- KEYBOARD ----------------
 
@@ -127,7 +141,7 @@ async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"""🕰 Текущее серверное время
 
-📅 {format_date_ru(now)}
+📅 {format_date(now, chat_id)}
 ⏰ {now.strftime('%H:%M:%S')}
 🌍 Asia/Tashkent"""
     )
@@ -187,11 +201,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             hours = diff.seconds // 3600
             minutes = (diff.seconds % 3600) // 60
 
-            text = f"""🌙 До ифтара осталось:
+            text = f"""{t(chat_id,'iftar_left')}
 
-⏳ {hours} ч {minutes} мин
-🕰 Ифтар в: {iftar_str}
-📅 {format_date_ru(now)}"""
+⏳ {hours} {t(chat_id,'hour')} {minutes} {t(chat_id,'minute')}
+{t(chat_id,'iftar_time')} {iftar_str}
+📅 {format_date(now, chat_id)}"""
 
         await query.edit_message_text(
             text,
@@ -216,10 +230,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         iftar = TIMES[date_str]["iftar"]
 
         await query.edit_message_text(
-            f"""📅 {format_date_ru(date_obj)}
+            f"""📅 {format_date(date_obj, chat_id)}
 
-🌅 Сухур до: {suhoor}
-🌙 Ифтар в: {iftar}""",
+        {t(chat_id,'suhoor_until')} {suhoor}
+        {t(chat_id,'iftar_time')} {iftar}""",
             reply_markup=main_keyboard(chat_id)
         )
 # ---------------- DAILY REMINDERS ----------------
@@ -254,7 +268,7 @@ async def reminder_suhoor_10(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id=context.job.chat_id,
-        text=f"""📅 {format_date_ru(now)}
+        text=f"""📅 {format_date(now, chat_id)}
 
 ⏳ До окончания сухура осталось 10 минут!
 🕰 Время закрытия: {suhoor}
@@ -271,7 +285,7 @@ async def reminder_iftar_10(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(
         chat_id=context.job.chat_id,
-        text=f"""📅 {format_date_ru(now)}
+        text=f"""📅 {format_date(now, chat_id)}
 
 ⏳ До ифтара осталось 10 минут!
 🕰 Время открытия: {iftar}
