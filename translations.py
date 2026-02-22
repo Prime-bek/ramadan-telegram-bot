@@ -11,6 +11,7 @@ TEXTS = {
         "iftar_time": "🕰 Ифтар в",
 
         "lang_changed": "✅ Язык изменён",
+        "language": "🌐 Язык",
     },
 
     "uz": {
@@ -24,5 +25,6 @@ TEXTS = {
         "iftar_time": "🕰 Iftor vaqti",
 
         "lang_changed": "✅ Til o'zgartirildi",
+        "language": "🌐 Til",
     }
 }

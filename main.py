@@ -86,10 +86,9 @@ def main_keyboard(chat_id):
         [InlineKeyboardButton(t(chat_id,"today"), callback_data="today")],
         [InlineKeyboardButton(t(chat_id,"tomorrow"), callback_data="tomorrow")],
         [InlineKeyboardButton(t(chat_id,"countdown"), callback_data="countdown")],
-        [InlineKeyboardButton(t(chat_id,"check_time"), callback_data="check_time")],
+        [InlineKeyboardButton(t(chat_id,"language"), callback_data="language")]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 def language_keyboard():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_ru")],
@@ -136,14 +135,21 @@ async def check_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- BUTTON HANDLER ----------------
 
-
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     query = update.callback_query
     await query.answer()
 
     chat_id = str(query.message.chat.id)
     now = datetime.now(UZ_TZ)
+
+    # ---------- OPEN LANGUAGE MENU ----------
+    if query.data == "language":
+        await query.edit_message_text(
+            "🌐 Выберите язык / Tilni tanlang:",
+            reply_markup=language_keyboard()
+        )
+        return
 
     # ---------- LANGUAGE SWITCH ----------
     if query.data.startswith("lang_"):
@@ -154,14 +160,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             t(chat_id, "lang_changed"),
-            reply_markup=main_keyboard(chat_id)
-        )
-        return
-
-    # ---------- CHECK TIME ----------
-    if query.data == "check_time":
-        await query.edit_message_text(
-            f"🕰 {format_date_ru(now)}\n⏰ {now.strftime('%H:%M:%S')}",
             reply_markup=main_keyboard(chat_id)
         )
         return
@@ -224,7 +222,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🌙 Ифтар в: {iftar}""",
             reply_markup=main_keyboard(chat_id)
         )
-
 # ---------------- DAILY REMINDERS ----------------
 
 async def daily_scheduler(context: ContextTypes.DEFAULT_TYPE):
