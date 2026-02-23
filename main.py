@@ -50,12 +50,12 @@ def save_user_data(user_obj, uid):
 
     if uid not in users:
         users[uid] = {
-            "lang": "ru", 
+            "lang": "uz", 
             "city": "tashkent", 
             "remind_min": 10,
             "first_name": user_obj.first_name, 
             "username": user_obj.username,
-            "joined": now_tashkent  # Используем время Ташкента
+            "joined": now_tashkent,  # Используем время Ташкента
         }
     else:
         users[uid]["first_name"] = user_obj.first_name
@@ -376,50 +376,64 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 # ---------------- SCHEDULER ----------------
 async def send_notification(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
     try:
-        await context.bot.send_message(chat_id=context.job.chat_id, text=context.job.data)
+        # Добавляем микро-задержку перед отправкой каждого сообщения, 
+        # чтобы сообщения не улетали пачкой
+        await asyncio.sleep(0.05) 
+        await context.bot.send_message(chat_id=job.user_id, text=job.data)
+        logging.info(f"✅ Отправлено пользователю {job.user_id}")
     except Exception as e:
-        logging.error(f"Error sending to {context.job.chat_id}: {e}")
+        # Если всё-таки получили Flood Limit (код ошибки 429)
+        if "RetryAfter" in str(e):
+            logging.error(f"⚠️ Flood Limit! Нужно подождать.")
+        logging.error(f"❌ Ошибка отправки {job.user_id}: {e}")
 
 async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
-    for job in list(context.job_queue.jobs()):
-        if job.name and job.name.startswith("rem_"):
-            job.schedule_removal()
-
+    # Теперь мы не удаляем старые задачи, а просто не создаем дубликаты
     for uid, prefs in users.items():
         tz = get_tz(uid)
-        now = datetime.now(tz)
-        today = now.strftime("%Y-%m-%d")
+        now_local = datetime.now(tz)
+        today = now_local.strftime("%Y-%m-%d")
+        
         times = get_city_times(prefs["city"])
-        if today not in times: continue
+        if today not in times:
+            continue
 
         rm = prefs.get("remind_min", 10)
-        date_head = format_pretty_date(now, uid)
 
         for event in ["suhoor", "iftar"]:
+            job_name = f"rem_{uid}_{event}_{today}" # Добавили дату в имя задачи для точности
+            
+            # ПРОВЕРКА 1: Если такая задача уже запланирована — пропускаем
+            if context.job_queue.get_jobs_by_name(job_name):
+                continue
+
             ev_time = times[today][event]
-            ev_dt = datetime.strptime(f"{today} {ev_time}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-            rem_dt = ev_dt - timedelta(minutes=rm)
+            ev_dt_local = datetime.strptime(f"{today} {ev_time}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+            rem_dt_local = ev_dt_local - timedelta(minutes=rm)
+            
+            # ПРОВЕРКА 2: Перевод в UTC для JobQueue
+            rem_dt_utc = rem_dt_local.astimezone(ZoneInfo("UTC"))
 
-            if rem_dt > now:
-                dua_title = t(uid, f"{event}_dua_title")
-                dua_text = t(uid, f"{event}_dua")
-                rem_text = t(uid, f"{event}_rem_text")
-                label = t(uid, "close_time" if event == "suhoor" else "open_time")
-
+            # Проверяем, что время напоминания еще не наступило
+            if rem_dt_utc > datetime.now(ZoneInfo("UTC")):
+                # Формируем текст (используем ключи из translations.py)
                 msg = (
-                    f"📅 {date_head}\n\n"
-                    f"⏳ {rem_text} {rm} {t(uid, 'minute')}!\n"
-                    f"🕰 {label}: {ev_time}\n\n"
-                    f"{dua_title}\n{dua_text}"
+                    f"📅 {format_pretty_date(now_local, uid)}\n\n"
+                    f"⏳ {t(uid, event+'_rem_text')} {rm} {t(uid, 'minute')}!\n"
+                    f"🕰 {t(uid, 'open_time' if event=='iftar' else 'close_time')}: {ev_time}\n\n"
+                    f"{t(uid, event+'_dua_title')}\n{t(uid, event+'_dua')}"
                 )
 
+                # Ставим задачу
                 context.job_queue.run_once(
-                    send_notification, rem_dt, 
-                    chat_id=int(uid), data=msg, 
-                    name=f"rem_{uid}_{event}"
+                    send_notification, 
+                    when=rem_dt_utc, 
+                    user_id=int(uid), 
+                    data=msg, 
+                    name=job_name
                 )
-
 # ---------------- MAIN ----------------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
@@ -430,8 +444,7 @@ def main():
     app.add_handler(CommandHandler("admin", admin_panel))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, admin_message_handler))
 
-    app.job_queue.run_daily(run_scheduler, time=time(0, 5))
-    app.job_queue.run_once(run_scheduler, 5)
+    app.job_queue.run_repeating(run_scheduler, interval=120, first=5)
 
     print("БОТ ЗАПУЩЕН")
     app.run_polling()
