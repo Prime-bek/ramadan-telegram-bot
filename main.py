@@ -43,18 +43,28 @@ def save_users():
 users = load_users()
 
 def save_user_data(user_obj, uid):
+    # Создаем объект часового пояса Ташкента
+    tashkent_tz = ZoneInfo("Asia/Tashkent")
+    # Получаем текущее время именно в этом поясе
+    now_tashkent = datetime.now(tashkent_tz).strftime("%Y-%m-%d %H:%M:%S")
+
     if uid not in users:
         users[uid] = {
-            "lang": "ru", "city": "tashkent", "remind_min": 10,
-            "first_name": user_obj.first_name, "username": user_obj.username,
-            "joined": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "lang": "ru", 
+            "city": "tashkent", 
+            "remind_min": 10,
+            "first_name": user_obj.first_name, 
+            "username": user_obj.username,
+            "joined": now_tashkent  # Используем время Ташкента
         }
     else:
         users[uid]["first_name"] = user_obj.first_name
         users[uid]["username"] = user_obj.username
-    users[uid]["last_active"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Записываем активность тоже по Ташкенту
+    users[uid]["last_active"] = now_tashkent
     save_users()
-
+    
 # ---------------- HELPERS ----------------
 def t(uid, key):
     lang = users.get(str(uid), {}).get("lang", "ru")
@@ -101,11 +111,11 @@ def settings_kb(uid):
     ])
 def admin_kb():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users")],
+        # Кнопка теперь передает "0" — это начальная страница
+        [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users_0")],
         [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
         [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")]
     ])
-
 # ---------------- COMMANDS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = str(update.effective_chat.id)
@@ -260,78 +270,109 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
 
+    # ---------------- АДМИНКА: СПИСОК ПОЛЬЗОВАТЕЛЕЙ (С ПАГИНАЦИЕЙ) ----------------
+    elif q.data.startswith("admin_users"):
+        if update.effective_user.id != ADMIN_ID: return
+        
+        # Извлекаем номер страницы из callback (admin_users_0, admin_users_1 и т.д.)
+        parts = q.data.split("_")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        per_page = 15
+        
+        user_list = list(users.items())
+        total = len(user_list)
+        
+        start_idx = page * per_page
+        end_idx = start_idx + per_page
+        page_users = user_list[start_idx:end_idx]
+
+        buttons = []
+        for u_id, u_data in page_users:
+            name = u_data.get("first_name", "User")
+            buttons.append([InlineKeyboardButton(f"👤 {name} ({u_id})", callback_data=f"admin_user_{u_id}_{page}")])
+
+        # Кнопки управления страницами
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️ Назад", callback_data=f"admin_users_{page-1}"))
+        if end_idx < total:
+            nav.append(InlineKeyboardButton("Вперед ➡️", callback_data=f"admin_users_{page+1}"))
+        
+        if nav: buttons.append(nav)
+        buttons.append([InlineKeyboardButton("⬅️ В меню админа", callback_data="admin_back")])
+
+        await q.edit_message_text(
+            f"👥 ПОЛЬЗОВАТЕЛИ (Страница {page+1})\nВсего в базе: {total}", 
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+
+    # ---------------- АДМИНКА: ПРОСМОТР КОНКРЕТНОГО ЮЗЕРА ----------------
     elif q.data.startswith("admin_user_"):
-        if update.effective_user.id != ADMIN_ID:
-            return
+        if update.effective_user.id != ADMIN_ID: return
 
-        target_uid = q.data.replace("admin_user_", "")
+        # Получаем ID и страницу, чтобы вернуться назад на ту же страницу
+        data_parts = q.data.split("_")
+        target_uid = data_parts[2]
+        back_page = data_parts[3] if len(data_parts) > 3 else 0
+        
         user = users.get(target_uid)
-
         if not user:
-            await q.edit_message_text("❌ Пользователь не найден")
+            await q.edit_message_text("❌ Пользователь не найден", reply_markup=admin_kb())
             return
 
         info = (
-            "👤 Пользователь\n\n"
-            f"ID: {target_uid}\n"
-            f"Имя: {user.get('first_name')}\n"
-            f"Username: @{user.get('username')}\n"
-            f"Язык: {user.get('lang')}\n"
-            f"Город: {user.get('city')}\n"
-            f"Напоминание: {user.get('remind_min')} мин\n"
-            f"Зашёл: {user.get('joined')}\n"
-            f"Активен: {user.get('last_active')}"
+            "👤 ДЕТАЛИ ПОЛЬЗОВАТЕЛЯ\n\n"
+            f"🆔 ID: {target_uid}\n"
+            f"👤 Имя: {user.get('first_name')}\n"
+            f"🔗 Username: @{user.get('username')}\n"
+            f"🌐 Язык: {user.get('lang')}\n"
+            f"🌍 Город: {user.get('city')}\n"
+            f"🔔 Напоминание: {user.get('remind_min')} мин\n"
+            f"📅 Зашёл: {user.get('joined')}\n"
+            f"⚡ Активен: {user.get('last_active')}"
         )
+        
+        # Кнопка возврата именно на ту страницу, с которой пришли
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад к списку", callback_data=f"admin_users_{back_page}")]])
+        await q.edit_message_text(info, reply_markup=kb)
 
-        await q.edit_message_text(info)
-
+    # ---------------- АДМИНКА: СТАТИСТИКА ----------------
     elif q.data == "admin_stats":
-        if update.effective_user.id != ADMIN_ID:
-            return
+        if update.effective_user.id != ADMIN_ID: return
 
         total_users = len(users)
-        today = datetime.now().strftime("%Y-%m-%d")
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        active_today = sum(1 for u in users.values() if u.get("last_active", "").startswith(today_str))
 
-        active_today = 0
         lang_stats = {}
         city_stats = {}
+        for u in users.values():
+            l = u.get("lang", "unknown"); lang_stats[l] = lang_stats.get(l, 0) + 1
+            c = u.get("city", "unknown"); city_stats[c] = city_stats.get(c, 0) + 1
 
-        for uid2, data in users.items():
-
-            last_active = data.get("last_active", "")
-            if last_active.startswith(today):
-                active_today += 1
-
-            lang = data.get("lang", "unknown")
-            lang_stats[lang] = lang_stats.get(lang, 0) + 1
-
-            city = data.get("city", "unknown")
-            city_stats[city] = city_stats.get(city, 0) + 1
-
-        text = "📊 СТАТИСТИКА БОТА\n\n"
-        text += f"👥 Всего пользователей: {total_users}\n"
-        text += f"🔥 Активны сегодня: {active_today}\n\n"
-
-        text += "🌐 Языки:\n"
-        for lang, count in lang_stats.items():
-            text += f"• {lang}: {count}\n"
-
+        text = f"📊 СТАТИСТИКА БОТА\n\n👥 Всего: {total_users}\n🔥 Сегодня активны: {active_today}\n\n🌐 Языки:\n"
+        for lang, count in lang_stats.items(): text += f"• {lang}: {count}\n"
         text += "\n🌍 Города:\n"
-        for city, count in city_stats.items():
-            text += f"• {city}: {count}\n"
+        for city, count in city_stats.items(): text += f"• {city}: {count}\n"
 
-        await q.edit_message_text(text, reply_markup=admin_kb())
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ В меню админа", callback_data="admin_back")]])
+        await q.edit_message_text(text, reply_markup=kb)
 
+    # ---------------- АДМИНКА: РАССЫЛКА ----------------
     elif q.data == "admin_broadcast":
-        if update.effective_user.id != ADMIN_ID:
-         return
-
+        if update.effective_user.id != ADMIN_ID: return
         context.user_data["broadcast_mode"] = True
-
+        
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="admin_back")]])
         await q.edit_message_text(
-            "📢 Отправь сообщение, и оно будет разослано ВСЕМ пользователям.\n\n"
-            "❗ Просто отправь текст следующим сообщением."
-    )
+            "📢 РЕЖИМ РАССЫЛКИ\n\nОтправь текст сообщения следующим сообщением, и оно уйдет всем пользователям.",
+            reply_markup=kb
+        )
+
+    # ---------------- ВОЗВРАТ В МЕНЮ ----------------
+    elif q.data == "admin_back":
+        if update.effective_user.id == ADMIN_ID:
+            await q.edit_message_text("🛠 ГЛАВНОЕ МЕНЮ АДМИНА", reply_markup=admin_kb())
         
 # ---------------- SCHEDULER ----------------
 async def send_notification(context: ContextTypes.DEFAULT_TYPE):
