@@ -32,6 +32,9 @@ ONBOARD_LANG = "onb_lang"
 ONBOARD_CITY = "onb_city"
 BROADCAST_MODE = "broadcast_mode"
 
+# Максимальное отклонение для "опоздавших" напоминаний (в секундах)
+LATE_WINDOW_SECONDS = 120  # 2 минуты
+
 # ---------------- PATHS ----------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -40,37 +43,40 @@ DATA_DIR = os.getenv("DATA_DIR", "/data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
+TRACKER_FILE = os.path.join(DATA_DIR, "tracker.json")
 
 # ---------------- DATA ----------------
 users_lock = Lock()
+tracker_lock = Lock()
 TIMES_CACHE = {}
 
 def load_users():
     """Загружает пользователей из файла с обработкой ошибок"""
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-        return {}
+    with users_lock:
+        if not os.path.exists(USERS_FILE):
+            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
 
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
-    except (json.JSONDecodeError, IOError) as e:
-        logging.error(f"Ошибка загрузки users.json: {e}")
-        if os.path.exists(USERS_FILE):
-            backup_name = f"{USERS_FILE}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            try:
-                os.rename(USERS_FILE, backup_name)
-                logging.info(f"Создан бэкап: {backup_name}")
-            except OSError:
-                pass
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-        return {}
-
+        try:
+            with open(USERS_FILE, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content:
+                    return {}
+                return json.loads(content)
+        except (json.JSONDecodeError, IOError) as e:
+            logging.error(f"Ошибка загрузки users.json: {e}")
+            if os.path.exists(USERS_FILE):
+                backup_name = f"{USERS_FILE}.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                try:
+                    os.rename(USERS_FILE, backup_name)
+                    logging.info(f"Создан бэкап: {backup_name}")
+                except OSError:
+                    pass
+            with open(USERS_FILE, "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            return {}
+        
 def save_users():
     """Сохраняет пользователей в файл с блокировкой"""
     with users_lock:
@@ -84,8 +90,67 @@ def save_users():
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-# Загружаем пользователей при старте
+# ---------------- TRACKER (очищенный) ----------------
+def load_tracker():
+    """Загружает трекер, очищая старые записи"""
+    with tracker_lock:
+        if not os.path.exists(TRACKER_FILE):
+            return {}
+        
+        try:
+            with open(TRACKER_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            # Очищаем записи старше 2 дней
+            today = datetime.now(ZoneInfo("Asia/Tashkent")).strftime("%Y-%m-%d")
+            yesterday = (datetime.now(ZoneInfo("Asia/Tashkent")) - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            cleaned = {}
+            for key, value in data.items():
+                # key format: user123_iftar_2026-02-26
+                parts = key.split("_")
+                if len(parts) >= 3:
+                    date_part = parts[-1]
+                    if date_part in [today, yesterday]:
+                        cleaned[key] = value
+            
+            # Сохраняем очищенный трекер
+            with open(TRACKER_FILE, "w", encoding="utf-8") as f:
+                json.dump(cleaned, f, ensure_ascii=False, indent=2)
+            
+            return cleaned
+            
+        except Exception as e:
+            logging.error(f"Ошибка загрузки tracker.json: {e}")
+            return {}
+
+def save_tracker(tracker_data):
+    """Сохраняет трекер атомарно"""
+    with tracker_lock:
+        temp_file = f"{TRACKER_FILE}.tmp"
+        try:
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(tracker_data, f, ensure_ascii=False, indent=2)
+            os.replace(temp_file, TRACKER_FILE)
+        except Exception as e:
+            logging.error(f"Ошибка сохранения tracker.json: {e}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+
+def is_notification_sent(tracker, uid, event, date_str):
+    """Проверяет, было ли уже отправлено уведомление"""
+    key = f"{uid}_{event}_{date_str}"
+    return tracker.get(key, False)
+
+def mark_notification_sent(tracker, uid, event, date_str):
+    """Помечает уведомление как отправленное"""
+    key = f"{uid}_{event}_{date_str}"
+    tracker[key] = True
+    save_tracker(tracker)
+
+# Загружаем данные при старте
 users = load_users()
+notification_tracker = load_tracker()
 
 def get_user(uid: str):
     """Возвращает данные пользователя или None"""
@@ -213,6 +278,7 @@ def admin_kb():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Пользователи", callback_data="admin_users_0")],
         [InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")],
+        [InlineKeyboardButton("🔔 Напоминания", callback_data="admin_remind_stats")],
         [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")]
     ])
 
@@ -766,6 +832,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
+    # Статистика напоминаний
+    if q.data == "admin_remind_stats":
+        remind_stats = {5: 0, 10: 0, 15: 0, "other": 0}
+        
+        for u in users.values():
+            rm = u.get("remind_min", 10)
+            if rm in remind_stats:
+                remind_stats[rm] += 1
+            else:
+                remind_stats["other"] += 1
+        
+        text = (
+            f"🔔 СТАТИСТИКА НАПОМИНАНИЙ\n\n"
+            f"⏱ 5 минут: {remind_stats[5]} чел.\n"
+            f"⏱ 10 минут: {remind_stats[10]} чел.\n"
+            f"⏱ 15 минут: {remind_stats[15]} чел.\n"
+        )
+        
+        if remind_stats["other"] > 0:
+            text += f"⏱ Другое: {remind_stats['other']} чел.\n"
+        
+        total = len(users)
+        text += f"\n👥 Всего: {total} чел."
+        
+        text += "\n\n📊 Проценты:\n"
+        for minutes in [5, 10, 15]:
+            pct = (remind_stats[minutes] / total * 100) if total > 0 else 0
+            bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+            text += f"{minutes} мин: {bar} {pct:.1f}%\n"
+        
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("⬅️ В меню админа", callback_data="admin_back")]
+        ])
+        
+        await q.edit_message_text(text, reply_markup=kb)
+        return
+    
     # Статистика
     if q.data == "admin_stats":
         total_users = len(users)
@@ -776,7 +879,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if u.get("last_active", "").startswith(today_str)
         )
         
-        # Статистика по языкам
         lang_stats = {}
         city_stats = {}
         
@@ -830,36 +932,70 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-# ---------------- SCHEDULER ----------------
-async def send_notification(context: ContextTypes.DEFAULT_TYPE):
-    """Отправка уведомления"""
-    job = context.job
-    try:
-        await asyncio.sleep(0.05)
-        await context.bot.send_message(
-            chat_id=job.user_id, 
-            text=job.data,
-            parse_mode="HTML"
-        )
-        logging.info(f"✅ Уведомление отправлено: {job.user_id}")
-    except Exception as e:
-        if "RetryAfter" in str(e):
-            logging.warning(f"⏳ Flood limit для {job.user_id}")
-        else:
-            logging.error(f"❌ Ошибка отправки {job.user_id}: {e}")
+# ---------------- SCHEDULER (исправленный) ----------------
+
+async def send_notification_with_retry(context: ContextTypes.DEFAULT_TYPE, uid: str, msg: str, event: str, date_str: str, max_retries: int = 3):
+    """Отправка уведомления с повторными попытками при flood limit"""
+    global notification_tracker
+    
+    chat_id = int(uid)
+    
+    for attempt in range(max_retries):
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                parse_mode="HTML"
+            )
+            
+            # Помечаем как отправленное только после успеха
+            mark_notification_sent(notification_tracker, uid, event, date_str)
+            logging.info(f"✅ Напоминание {event} отправлено: {uid} (попытка {attempt + 1})")
+            return True
+            
+        except Exception as e:
+            error_str = str(e)
+            
+            if "RetryAfter" in error_str or "Flood control exceeded" in error_str:
+                # Извлекаем время ожидания
+                retry_after = 5  # дефолтное значение
+                
+                try:
+                    if "RetryAfter" in error_str:
+                        # Парсим из ошибки python-telegram-bot
+                        import re
+                        match = re.search(r'RetryAfter\((\d+)\)', error_str)
+                        if match:
+                            retry_after = int(match.group(1))
+                        else:
+                            # Пробуем найти retry_after в атрибутах исключения
+                            if hasattr(e, 'retry_after'):
+                                retry_after = e.retry_after
+                except:
+                    pass
+                
+                if attempt < max_retries - 1:
+                    logging.warning(f"⏳ Flood limit для {uid}, ждём {retry_after}с (попытка {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(retry_after + 1)  # +1 сек на всякий случай
+                    continue  # Пробуем ещё раз
+                else:
+                    logging.error(f"❌ Исчерпаны попытки для {uid} после {max_retries} попыток")
+                    return False
+            else:
+                logging.error(f"❌ Ошибка отправки {event} для {uid}: {e}")
+                return False
+    
+    return False
 
 async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
-    """Планировщик напоминаний"""
+    """Планировщик напоминаний с защитой от пропусков и перезагрузок"""
+    global notification_tracker
+    
     tashkent_now = datetime.now(ZoneInfo("Asia/Tashkent"))
     today = tashkent_now.strftime("%Y-%m-%d")
+    now_utc = datetime.now(ZoneInfo("UTC"))
     
     for uid, prefs in list(users.items()):
-        # Удаляем старые задачи этого пользователя
-        for job in context.job_queue.jobs():
-            if job.name and job.name.startswith(f"rem_{uid}_"):
-                if today not in job.name:
-                    job.schedule_removal()
-        
         tz = get_tz(uid)
         now_local = datetime.now(tz)
         city = prefs.get("city", "tashkent")
@@ -871,9 +1007,8 @@ async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
         remind_min = prefs.get("remind_min", 10)
         
         for event in ["suhoor", "iftar"]:
-            job_name = f"rem_{uid}_{event}_{today}"
-            
-            if context.job_queue.get_jobs_by_name(job_name):
+            # Проверяем, не отправлено ли уже
+            if is_notification_sent(notification_tracker, uid, event, today):
                 continue
             
             event_time = times[today][event]
@@ -885,30 +1020,62 @@ async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
             remind_dt_local = event_dt_local - timedelta(minutes=remind_min)
             remind_dt_utc = remind_dt_local.astimezone(ZoneInfo("UTC"))
             
-            if remind_dt_utc <= datetime.now(ZoneInfo("UTC")):
-                continue
+            # РАССТОЯНИЕ ДО ВРЕМЕНИ НАПОМИНАНИЯ (в секундах)
+            time_until_remind = (remind_dt_utc - now_utc).total_seconds()
             
-            # Формируем текст напоминания
-            pretty_date = format_pretty_date(now_local, uid)
-            msg = (
-                f"📅 {pretty_date}\n\n"
-                f"⏳ {t(uid, event+'_rem_text')} {remind_min} {t(uid, 'minute')}!\n"
-                f"🕰 {t(uid, 'open_time' if event=='iftar' else 'close_time')}: {event_time}\n\n"
-                f"{t(uid, event+'_dua_title')}\n"
-                f"<i>{t(uid, event+'_dua')}</i>"
-            )
+            # СЛУЧАЙ 1: Время напоминания ещё НЕ наступило (в будущем)
+            # Планируем задачу в job_queue
+            if time_until_remind > 0:
+                job_name = f"rem_{uid}_{event}_{today}"
+                
+                # Проверяем, нет ли уже такой задачи
+                if not context.job_queue.get_jobs_by_name(job_name):
+                    pretty_date = format_pretty_date(now_local, uid)
+                    msg = (
+                        f"📅 {pretty_date}\n\n"
+                        f"⏳ {t(uid, event+'_rem_text')} {remind_min} {t(uid, 'minute')}!\n"
+                        f"🕰 {t(uid, 'open_time' if event=='iftar' else 'close_time')}: {event_time}\n\n"
+                        f"{t(uid, event+'_dua_title')}\n"
+                        f"<i>{t(uid, event+'_dua')}</i>"
+                    )
+                    
+                    context.job_queue.run_once(
+                        send_scheduled_notification,
+                        when=remind_dt_utc,
+                        user_id=int(uid),
+                        data={
+                            "msg": msg,
+                            "uid": uid,
+                            "event": event,
+                            "date": today
+                        },
+                        name=job_name
+                    )
+                    
+                    logging.info(f"📅 Запланировано {event} для {uid} ({city}) на {remind_dt_utc}")
             
-            context.job_queue.run_once(
-                send_notification,
-                when=remind_dt_utc,
-                user_id=int(uid),
-                data=msg,
-                name=job_name
-            )
+            # СЛУЧАЙ 2: Время напоминания УЖЕ прошло, но недавно (в окне LATE_WINDOW)
+            # Отправляем НЕМЕДЛЕННО (защита от перезагрузки/пропуска)
+            elif -LATE_WINDOW_SECONDS <= time_until_remind <= 0:
+                logging.warning(f"⚠️ ОПОЗДАНИЕ: {event} для {uid} прошло {abs(time_until_remind):.0f}с назад, отправляем сейчас!")
+                
+                pretty_date = format_pretty_date(now_local, uid)
+                msg = (
+                    f"📅 {pretty_date}\n\n"
+                    f"⏳ {t(uid, event+'_rem_text')} {remind_min} {t(uid, 'minute')}!\n"
+                    f"🕰 {t(uid, 'open_time' if event=='iftar' else 'close_time')}: {event_time}\n\n"
+                    f"{t(uid, event+'_dua_title')}\n"
+                    f"<i>{t(uid, event+'_dua')}</i>"
+                )
+                
+                # Отправляем немедленно (не в очереди)
+                asyncio.create_task(
+                    send_notification_with_retry(context, uid, msg, event, today)
+                )
             
-            logging.info(f"📅 Запланировано {event} для {uid} на {remind_dt_utc}")
+            # СЛУЧАЙ 3: Время прошло давно (> LATE_WINDOW) - пропускаем
         
-        # === НОВОЕ: Проверяем наступление времени события для поздравления ===
+        # Проверяем наступление времени события для поздравления
         for event in ["suhoor", "iftar"]:
             event_time = times[today][event]
             event_dt = datetime.strptime(
@@ -916,23 +1083,20 @@ async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
                 "%Y-%m-%d %H:%M"
             ).replace(tzinfo=tz)
             
-            # Если время события наступило (±1 минута) и еще не отправляли
             diff = (now_local - event_dt).total_seconds()
-            if 0 <= diff <= 60:  # Наступило менее минуты назад
-                congrats_key = f"{event}_congrats_sent_{today}"  # Уникальный ключ на каждый день
+            # Окно поздравления 2 минуты
+            if 0 <= diff <= 120:
+                congrats_key = f"{event}_congrats_sent_{today}"
                 if not prefs.get(congrats_key):
-                    # Выбираем правильное сообщение в зависимости от события
                     if event == "suhoor":
-                        # Сухур закончился = начался пост
                         congrats_msg = (
                             f"🌅 {t(uid, 'suhoor_ended')}\n\n"
                             f"{t(uid, 'fast_started')}\n\n"
                             f"{t(uid, 'ramadan_congrats')}"
                         )
                     else:
-                        # Ифтар закончился = окончание поста
                         congrats_msg = (
-                            f"🌙 {t(uid, 'iftar_ended')}\n\n"
+                            f"🌙 {t(uid, 'iftar_started')}\n\n"
                             f"{t(uid, 'fast_ended')}\n\n"
                             f"{t(uid, 'ramadan_congrats')}"
                         )
@@ -942,11 +1106,27 @@ async def run_scheduler(context: ContextTypes.DEFAULT_TYPE):
                             chat_id=int(uid),
                             text=congrats_msg
                         )
-                        # Отмечаем что отправили (с датой)
                         update_user(uid, **{congrats_key: True})
                         logging.info(f"🎉 Поздравление {event} для {uid}")
                     except Exception as e:
                         logging.error(f"Ошибка поздравления {uid}: {e}")
+
+async def send_scheduled_notification(context: ContextTypes.DEFAULT_TYPE):
+    """Отправка запланированного уведомления (из job_queue)"""
+    job = context.job
+    data = job.data
+    
+    uid = data["uid"]
+    event = data["event"]
+    date_str = data["date"]
+    msg = data["msg"]
+    
+    # Проверяем ещё раз, не отправлено ли уже (на случай перезагрузки)
+    if is_notification_sent(notification_tracker, uid, event, date_str):
+        logging.info(f"⏭ Пропускаем {event} для {uid} - уже отправлено")
+        return
+    
+    await send_notification_with_retry(context, uid, msg, event, date_str)
 
 # ---------------- MAIN ----------------
 async def set_bot_commands(app):

@@ -36,9 +36,9 @@ TEXTS = {
         "suhoor_dua": "Navaytu an asuma sovma shahri ramazona minal fajri ilal mag'ribi xolisan lillahi ta'ala. Allohu akbar!",
         "iftar_dua": "Allohumma laka sumtu va bika amantu va a'layka tavakkaltu va a'la rizqika aftortu, fag'firliy ya G'offaru ma qoddamtu va ma axxortu.",
         
-        # === ИСПРАВЛЕННОЕ: События закончились ===
+        # === ИСПРАВЛЕННОЕ: События ===
         "suhoor_ended": "🌅 Saharlik vaqti tugadi!",
-        "iftar_ended": "🌙 Iftor vaqti tugadi!",
+        "iftar_started": "🌙 Iftor vaqti boshlandi!",  # ИСПРАВЛЕНО: boshlandi (начался)
         
         # === НОВОЕ: Начало/окончание поста ===
         "fast_started": "🤲 Ro'za boshlandi!\nAlloh taolo niyatlaringizni qabul qilsin.",
@@ -99,9 +99,9 @@ TEXTS = {
         "suhoor_dua": "Навайту ан асума совма шахри рамазана минал фажри илал мағриби холисан лиллахи таъала. Аллоху акбар!",
         "iftar_dua": "Аллохумма лака сумту ва бика аманту ва аълайка таваккалту ва аъла ризқика афторту, фағфирлий йа Ғоффару ма қоддамту ва ма аххорту.",
         
-        # === ИСПРАВЛЕННОЕ: События закончились ===
+        # === ИСПРАВЛЕННОЕ: События ===
         "suhoor_ended": "🌅 Время сухура закончилось!",
-        "iftar_ended": "🌙 Время ифтара закончилось!",
+        "iftar_started": "🌙 Время ифтара началось!",  # ИСПРАВЛЕНО: началось
         
         # === НОВОЕ: Начало/окончание поста ===
         "fast_started": "🤲 Пост начался!\nДа примет Аллах ваше намерение.",
